@@ -1,6 +1,10 @@
 # AUTOVAL
 Autoval is a library designed for model skill assessment, with a focus on large-scale water level data.
 
+## Interactive Dashboard
+The Plotly/Dash dashboard is an optional output layer that reads the existing validation results.  
+See [`docs/dashboard/README.md`](docs/dashboard/README.md) for bundle details and quickstart commands.
+
 ## Supported Models
 Autoval currently supports the output of the following models: 
 

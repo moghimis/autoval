@@ -16,6 +16,29 @@ from searvey import ioc
 from searvey import uhslc
 
 
+def _dash_bundle_requested(cfg):
+    """
+    Returns True when the dashboard bundle should capture station time series.
+    """
+    try:
+        mode = cfg['Analysis'].get('reportmode', 'html')
+    except Exception:
+        return False
+    return mode in ['dash', 'both']
+
+
+def _series_has_observations(series):
+    """
+    Utility to determine whether a series contains any valid observations.
+    """
+    if series is None:
+        return False
+    try:
+        return bool(np.sum(~np.isnan(series)))
+    except Exception:
+        return True
+
+
 #==============================================================================
 def detectCycle (tag):
     cycle = ''
@@ -500,6 +523,37 @@ nowcast_outputFiles, nowcast_outputFiles_biased), n = args
     myPointData = dict () 
     isVirtual   = False  # 'virtual' station has no obs counterpart
 
+    capture_series = _dash_bundle_requested(cfg)
+
+    def store_series(obs_series, mod_series, ref_series, station_code, station_kind,
+                     has_nowcast=False, uses_bias=False, virtual=False):
+        if capture_series:
+            extras = {
+                'station_type': station_kind,
+                'has_obs': _series_has_observations(obs_series),
+                'has_nowcast': has_nowcast,
+                'dynamic_bias': uses_bias,
+                'virtual': virtual
+            }
+            myPointData['series'] = {
+                'time': ref_series,
+                'model': mod_series,
+                'obs': obs_series,
+                'extras': extras
+            }
+        if uses_bias:
+            plt.waterlevel.pointSeries(cfg, 
+                obs_series, mod_series, ref_series, station_code, info, tag, 
+                model['time'], forecast, nowcast_biased)
+        else:
+            plt.waterlevel.pointSeries(cfg, 
+                obs_series, mod_series, ref_series, station_code, info, tag, 
+                model['time'], forecast)
+    nowcast_enabled = cfg['Analysis']['nowcast'] == 1
+    nowcast_window = nowcast_enabled and \
+        cfg['Analysis']['nowcastperiodineachfile'] < cfg['Analysis']['nowcastperiod']
+    dynamic_bias = cfg['Analysis']['dynamicbiascorrection'] == 1
+
     forecast = model['zeta'][:,n]
 
     forecast[np.where(forecast<-100.)] = np.nan  # _fillvalue doesnt work
@@ -691,20 +745,26 @@ nowcast_outputFiles, nowcast_outputFiles_biased), n = args
                 #pointSkill.append ( myPointData )
  
                 try:
-                   
-                    if cfg['Analysis']['nowcast'] == 1 and cfg['Analysis']['dynamicbiascorrection'] == 1: 
-                       plt.waterlevel.pointSeries(cfg, 
-                            obsValsWithNowcast, modValsWithNowcast, refDatesWithNowcast, nosid, info, tag, 
-                            model['time'], forecast, nowcast_biased)
-                    elif cfg['Analysis']['nowcast'] == 1 and cfg['Analysis']['dynamicbiascorrection'] != 1 and cfg['Analysis']['nowcastperiodineachfile'] < cfg['Analysis']['nowcastperiod']: 
-                       plt.waterlevel.pointSeries(cfg, 
-                            obsValsWithNowcast, modValsWithNowcast, refDatesWithNowcast, nosid, info, tag, 
-                            model['time'], forecast)
+                    if nowcast_enabled and dynamic_bias:
+                        if nowcast_window:
+                            store_series(
+                                obsValsWithNowcast, modValsWithNowcast,
+                                refDatesWithNowcast, nosid, 'ioc',
+                                has_nowcast=True, uses_bias=True)
+                        else:
+                            store_series(
+                                obsVals, modVals, refDates,
+                                nosid, 'ioc',
+                                has_nowcast=False, uses_bias=True)
+                    elif nowcast_enabled and not dynamic_bias and nowcast_window:
+                        store_series(
+                            obsValsWithNowcast, modValsWithNowcast,
+                            refDatesWithNowcast, nosid, 'ioc',
+                            has_nowcast=True)
                     else:
-                       plt.waterlevel.pointSeries(cfg,
-                            obsVals, modVals, refDates, info['nosid'], info, tag,
-                            model['time'], forecast)
-
+                        store_series(
+                            obsVals, modVals, refDates,
+                            info['nosid'], 'ioc', has_nowcast=False)
                 except:
                     isVirtual = True
 
@@ -775,30 +835,24 @@ nowcast_outputFiles, nowcast_outputFiles_biased), n = args
                 #pointSkill.append ( myPointData )
 
                 try:
-
-                    if cfg['Analysis']['nowcast'] == 1 and cfg['Analysis']['dynamicbiascorrection'] == 1: 
-
-                       if cfg['Analysis']['nowcastperiodineachfile'] < cfg['Analysis']['nowcastperiod']:
-
-                            plt.waterlevel.pointSeries(cfg, 
-                               obsValsWithNowcast, modValsWithNowcast, refDatesWithNowcast, nosid, info, tag, 
-                               model['time'], forecast, nowcast_biased)
-                       else:
-
-                            plt.waterlevel.pointSeries(cfg, 
-                               obsVals, modVals, refDates, nosid, info, tag, 
-                               model['time'], forecast,nowcast_biased) 
-                    elif cfg['Analysis']['nowcast'] == 1 and cfg['Analysis']['dynamicbiascorrection'] != 1 and cfg['Analysis']['nowcastperiodineachfile'] < cfg['Analysis']['nowcastperiod']: 
-
-                       plt.waterlevel.pointSeries(cfg, 
-                            obsValsWithNowcast, modValsWithNowcast, refDatesWithNowcast, nosid, info, tag, 
-                            model['time'], forecast)
+                    if nowcast_enabled and dynamic_bias:
+                        if nowcast_window:
+                            store_series(
+                                obsValsWithNowcast, modValsWithNowcast,
+                                refDatesWithNowcast, nosid, 'nos',
+                                has_nowcast=True, uses_bias=True)
+                        else:
+                            store_series(
+                                obsVals, modVals, refDates, nosid, 'nos',
+                                has_nowcast=False, uses_bias=True)
+                    elif nowcast_enabled and not dynamic_bias and nowcast_window:
+                        store_series(
+                            obsValsWithNowcast, modValsWithNowcast,
+                            refDatesWithNowcast, nosid, 'nos',
+                            has_nowcast=True)
                     else:
-
-                       plt.waterlevel.pointSeries(cfg, 
-                            obsVals, modVals, refDates, nosid, info, tag, 
-                            model['time'], forecast) 
-
+                        store_series(
+                            obsVals, modVals, refDates, nosid, 'nos')
                 except:
                     isVirtual = True
 
@@ -814,17 +868,17 @@ nowcast_outputFiles, nowcast_outputFiles_biased), n = args
                 
                  try:
 
-                     if cfg['Analysis']['nowcast'] == 1 and cfg['Analysis']['nowcastperiodineachfile'] < cfg['Analysis']['nowcastperiod']:
-                         plt.waterlevel.pointSeries(cfg,  
-                            None, np.concatenate((nowcast,forecast)), np.concatenate((nowcast_time,model['time'])),
-                            info['nosid'], info, tag, 
-                            model['time'], forecast)
+                     if nowcast_enabled and nowcast_window:
+                         store_series(
+                            None, np.concatenate((nowcast,forecast)),
+                            np.concatenate((nowcast_time,model['time'])),
+                            info['nosid'], 'virtual',
+                            has_nowcast=True, virtual=True)
 
                      else:  
-                         plt.waterlevel.pointSeries(cfg, 
+                         store_series(
                             None, forecast, model['time'], 
-                            info['nosid'], info, tag, 
-                            model['time'], forecast) 
+                            info['nosid'], 'virtual', virtual=True) 
                                       
                  except:
                      msg('w','Virtual station ' + nosid + ' was not plotted.')
@@ -939,6 +993,7 @@ def waterLevel (cfg, path, tag):
     info     = []
     datespan = []
 
+    station_points = []
     # Field data analysis
     if cfg['Analysis']['fielddataplots'] or cfg['Analysis']['maxfieldplots']:
         # Get the grid
@@ -953,6 +1008,7 @@ def waterLevel (cfg, path, tag):
     # Point data (time series)
     if cfg['Analysis']['pointdatastats']:
         pointSkill, datespan, tag = pointValidation (cfg, path, tag)
+        station_points = pointSkill
         lon  = []
         lat  = []
         for point in pointSkill:
@@ -973,4 +1029,4 @@ def waterLevel (cfg, path, tag):
             plt.skill.map (cfg, lon, lat, mtx, 'rval', [0., 1.],      [0.8, 1.], tag)
             plt.skill.map (cfg, lon, lat, mtx, 'vexp', [0., 100.],    [80., 100.], tag)
             plt.skill.map (cfg, lon, lat, mtx, 'npts', [0., 1000.],   [240.,1000.], tag)
-    return mtx, info, datespan, tag
+    return mtx, info, datespan, tag, station_points

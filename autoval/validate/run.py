@@ -6,6 +6,7 @@ import argparse
 import datetime
 from waterlevel import waterLevel
 from report.html import singleReport
+from report_bundle import write_bundle
 import csdllib
 from csdllib.oper.sys import msg
 import numpy as np
@@ -19,6 +20,10 @@ def read_cmd_argv (argv):
     
     parser.add_argument('-i','--iniFile',     required=True)
     parser.add_argument('-p','--paths',       required=True)
+    parser.add_argument('--report',
+                        default='html',
+                        choices=['html', 'dash', 'both'],
+                        help='Select report output mode. Default is html.')
     args = parser.parse_args() 
 
     msg('i', 'autoval.validate.run.py is configured with :')
@@ -165,7 +170,12 @@ if __name__ == "__main__":
     '''
     msg('time', str(datetime.datetime.utcnow()) + ' UTC')
     cmd = read_cmd_argv (sys.argv[1:])   # Read command line aruments
-    cfg = csdllib.oper.sys.config (cmd.iniFile) # Read config file   
+    cfg = csdllib.oper.sys.config (cmd.iniFile) # Read config file
+    report_mode = getattr(cmd, 'report', 'html')
+    try:
+        cfg['Analysis']['reportmode'] = report_mode
+    except:
+        pass
     cycle = ''                                  # OFS cycle
     
     try:
@@ -255,7 +265,7 @@ if __name__ == "__main__":
         tag  = expTags[n]
         path = expPaths[n] 
 
-        stats, info, datespan, tag = waterLevel (cfg, path, tag)
+        stats, info, datespan, tag, point_details = waterLevel (cfg, path, tag)
         expTags[n] = tag # in case if OFS cycle was detected
         
         expStats.append( stats )
@@ -267,6 +277,18 @@ if __name__ == "__main__":
 
         # Save/upload diagnostics reports
         
-        singleReport (cfg, tag, info, datespan, stats, avgStats)
+        if report_mode in ['html', 'both']:
+            singleReport (cfg, tag, info, datespan, stats, avgStats)
+        if report_mode in ['dash', 'both']:
+            write_bundle(
+                cfg=cfg,
+                tag=tag,
+                info=info,
+                datespan=datespan,
+                stats=stats,
+                avg_stats=avgStats,
+                point_details=point_details,
+                run_path=path,
+            )
         
         
